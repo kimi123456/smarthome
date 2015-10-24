@@ -1,0 +1,408 @@
+//
+//  FirstViewController.m
+//  SmartHome
+//
+//  Created by kimi on 15/10/15.
+//  Copyright © 2015年 kimi. All rights reserved.
+//
+
+#import "FirstViewController.h"
+#import "Client.h"
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <stdio.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <netdb.h>
+#include <sys/time.h>
+#include <sys/select.h>
+#include <errno.h>
+#include <string.h>
+#import "AppDelegate.h"
+#import "Equipment.h"
+#import "EquipmentGroup.h"
+
+@interface FirstViewController ()<UITableViewDataSource>{
+    UITableView *_tableView;
+    NSMutableArray *_equipmentarrs;//设备模型
+    NSIndexPath *_selectedIndexPath;//当前选中的组和行
+}
+@property (weak, nonatomic) IBOutlet UILabel *fire;
+
+@end
+
+int newsockfd;
+char *eName;
+char *eStatus;
+char *eData;
+
+
+@implementation FirstViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    // Do any additional setup after loading the view.
+    
+    AppDelegate *delegate=(AppDelegate*)[[UIApplication sharedApplication]delegate];
+    newsockfd = delegate.sockfd;
+    NSLog(@"sockfd: %d", newsockfd);
+    
+    dispatch_queue_t serialQueue=dispatch_queue_create("myThreadQueue1", DISPATCH_QUEUE_SERIAL);
+    
+    dispatch_async(serialQueue, ^{
+        [self keep_alive];
+    });
+
+    /*
+    [self initData];
+    
+    //创建一个分组样式的UITableView
+    _tableView=[[UITableView alloc]initWithFrame:self.view.bounds style:UITableViewStyleGrouped];
+    
+    //设置数据源，注意必须实现对应的UITableViewDataSource协议
+    _tableView.dataSource=self;
+    
+    //设置代理
+    _tableView.delegate=self;
+    
+    [self.view addSubview:_tableView];
+    */
+}
+
+void split(char **arr, char *str, const char *del)
+{
+    char *s = strtok(str, del);
+    
+    while(s != NULL)
+    {
+        *arr++ = s;
+        s = strtok(NULL, del);
+    }
+}
+
+
+-(void) keep_alive{
+    
+    dispatch_queue_t serialQueue=dispatch_queue_create("myThreadQueue2", DISPATCH_QUEUE_SERIAL);
+    dispatch_queue_t main_queue= dispatch_get_main_queue();
+    
+    dispatch_async(serialQueue, ^{
+    fd_set rfds;
+    struct timeval tv;
+    int retval, maxfd = -1;
+    int len;
+    while(1)
+    {
+        FD_ZERO(&rfds);
+        FD_SET(newsockfd, &rfds);
+        maxfd = 0;
+        
+        if(newsockfd > maxfd)
+        {
+            maxfd = newsockfd;
+        }
+        tv.tv_sec = 5;
+        tv.tv_usec = 0;
+        
+        retval = select(maxfd+1, &rfds, NULL, NULL, &tv);
+        if(retval == -1)
+        {
+            printf("[keep_live]select failed, %s\n", strerror(errno));
+            break;
+        }
+        else if(retval == 0)
+        {
+            char sendBuff[256] = {0,};
+            sprintf(sendBuff, "%d", 1);
+            int result;
+            
+            printf("[sendMsg]send msg to server: %s\n", sendBuff);
+            if((result = send(newsockfd,sendBuff,255,0)) < 0)
+            {
+                printf("[sendMsg]send message failed, %s\n", strerror(errno));
+                break;
+            }
+            continue;
+        }
+        else
+        {
+            if(FD_ISSET(newsockfd, &rfds))
+            {
+                char recvBuff[256] = {0,};
+                int result;
+                
+                if((result = read(newsockfd, recvBuff, 256)) <= 0)
+                {
+                    printf("[recvMsg]read message failed, %s\n", strerror(errno));
+                    break;
+                }
+                /*
+                char *arr[4];
+                char *del = ",";
+                split(arr, recvBuff, del);
+                if(strcmp(arr[0], "equipment") == 0)
+                {
+                    strcpy(eName, arr[1]);
+                    strcpy(eStatus, arr[2]);
+                    strcpy(eData, arr[3]);
+                }
+                
+                printf("%s, %s, %s, %s", arr[0], eName, eStatus, eData);
+                 */
+                if(strcmp(recvBuff, "9999") == 0)
+                {
+                    dispatch_sync(main_queue, ^{
+  
+                        [self initData];
+                        
+                        //创建一个分组样式的UITableView
+                        _tableView=[[UITableView alloc]initWithFrame:self.view.bounds style:UITableViewStyleGrouped];
+                        
+                        //设置数据源，注意必须实现对应的UITableViewDataSource协议
+                        _tableView.dataSource=self;
+                        
+                        //设置代理
+                        _tableView.delegate= self;
+                        
+                        [self.view addSubview:_tableView];
+                    });
+                    
+                }
+                /*
+                else
+                {
+                    dispatch_sync(main_queue, ^{
+                        NSLog(@"No Fire!");
+                        self.fire.text = @ "No Fire!";
+                    });
+                }
+                 */
+            }
+            continue;
+        }
+    }
+    
+    disConnect(&newsockfd);
+    });
+}
+
+#pragma mark 加载数据
+-(void)initData{
+    _equipmentarrs=[[NSMutableArray alloc]init];
+    
+    Equipment *equipment1=[Equipment initWithName:@"房间温湿度" andStatus:@"0" andData:@"温度20，湿度20"];
+    Equipment *equipment2=[Equipment initWithName:@"客厅温湿度" andStatus:@"0" andData:@""];
+    EquipmentGroup *group1=[EquipmentGroup initWithName:@"温湿度感应器" andDetail:@"" andEquipments:[NSMutableArray arrayWithObjects:equipment1,equipment2, nil]];
+    [_equipmentarrs addObject:group1];
+    
+    Equipment *equipment3=[Equipment initWithName:@"客厅报警器" andStatus:@"1" andData:@"开"];
+    Equipment *equipment4=[Equipment initWithName:@"房间报警器" andStatus:@"1" andData:@"开"];
+    Equipment *equipment5=[Equipment initWithName:@"厨房报警器" andStatus:@"1" andData:@"关"];
+    EquipmentGroup *group2=[EquipmentGroup initWithName:@"烟雾报警器" andDetail:@"" andEquipments:[NSMutableArray arrayWithObjects:equipment3,equipment4,equipment5, nil]];
+    [_equipmentarrs addObject:group2];
+    
+    
+    Equipment *equipment6=[Equipment initWithName:@"客厅灯" andStatus:@"1" andData:@"关"];
+    Equipment *equipment7=[Equipment initWithName:@"房间灯" andStatus:@"1" andData:@"开"];
+    Equipment *equipment8=[Equipment initWithName:@"厨房灯" andStatus:@"1" andData:@"开"];
+    EquipmentGroup *group3=[EquipmentGroup initWithName:@"烟雾报警器" andDetail:@"" andEquipments:[NSMutableArray arrayWithObjects:equipment6,equipment7,equipment8, nil]];
+    [_equipmentarrs addObject:group3];
+}
+
+
+#pragma mark - 数据源方法
+#pragma mark 返回分组数
+-(NSInteger)numberOfSectionsInTableView:(UITableView *)tableView{
+    NSLog(@"计算分组数");
+    return _equipmentarrs.count;
+}
+
+#pragma mark 返回每组行数
+-(NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section{
+    NSLog(@"计算每组(组%i)行数",section);
+    EquipmentGroup *group1=_equipmentarrs[section];
+    return group1.equipments.count;
+}
+
+#pragma mark返回每行的单元格
+-(UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath{
+    //NSIndexPath是一个对象，记录了组和行信息
+    NSLog(@"生成单元格(组：%i,行%i)",indexPath.section,indexPath.row);
+    
+    
+    EquipmentGroup *group=_equipmentarrs[indexPath.section];
+    Equipment *equipment=group.equipments[indexPath.row];
+    
+
+    //由于此方法调用十分频繁，cell的标示声明成静态变量有利于性能优化
+    static NSString *cellIdentifier=@"UITableViewCellIdentifierKey1";
+    static NSString *cellIdentifierForFirstRow=@"UITableViewCellIdentifierKeyWithSwitch";
+    //首先根据标示去缓存池取
+    UITableViewCell *cell;
+    if ([equipment.status  isEqual: @"1"]) {
+        cell=[tableView dequeueReusableCellWithIdentifier:cellIdentifierForFirstRow];
+    }else{
+        cell=[tableView dequeueReusableCellWithIdentifier:cellIdentifier];
+    }
+    //如果缓存池没有取到则重新创建并放到缓存池中
+    if(!cell){
+        if ([equipment.status  isEqual: @"1"]) {
+            cell=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:cellIdentifierForFirstRow];
+            UISwitch *sw=[[UISwitch alloc]init];
+            
+            if([equipment.data isEqual: @"开"]){
+                [sw setOn:YES animated:YES];
+            }
+            else{
+                [sw setOn:NO animated:YES];
+            }
+            sw.tag = (indexPath.section * 1000 +indexPath.row);
+            [sw addTarget:self action:@selector(switchValueChange:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView=sw;
+            
+        }else{
+            cell=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:cellIdentifier];
+            cell.accessoryType=UITableViewCellAccessoryDetailButton;
+        }
+    }
+    
+    //if(indexPath.row==0){
+    //    ((UISwitch *)cell.accessoryView).tag=indexPath.section;
+    //}
+    
+    
+    cell.textLabel.text=[equipment getName];
+    cell.detailTextLabel.text = equipment.data;
+    NSLog(@"cell:%@",cell);
+    
+    return cell;}
+
+#pragma mark 返回每组头标题名称
+-(NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section{
+    NSLog(@"生成组（组%i）名称",section);
+    EquipmentGroup *group=_equipmentarrs[section];
+    return group.name;
+}
+
+#pragma mark 返回每组尾部说明
+-(NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section{
+    NSLog(@"生成尾部（组%i）详情",section);
+    EquipmentGroup *group=_equipmentarrs[section];
+    return group.detail;
+}
+
+/*
+#pragma mark 返回每组标题索引
+-(NSArray *)sectionIndexTitlesForTableView:(UITableView *)tableView{
+    NSLog(@"生成组索引");
+    NSMutableArray *indexs=[[NSMutableArray alloc]init];
+    for(EquipmentGroup *group in _equipmentarrs){
+        [indexs addObject:group.name];
+    }
+    return indexs;
+}
+*/
+
+#pragma mark - 代理方法
+#pragma mark 设置分组标题内容高度
+-(CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section{
+    if(section==0){
+        return 30;
+    }
+    return 40;
+}
+
+#pragma mark 设置每行高度（每行高度可以不一样）
+-(CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath{
+    return 50;
+}
+
+#pragma mark 设置尾部说明内容高度
+-(CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section{
+    return 0;
+}
+
+/*
+#pragma mark 点击行
+-(void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath{
+    _selectedIndexPath=indexPath;
+    EquipmentGroup *group=_equipmentarrs[indexPath.section];
+    Equipment *equipment=group.equipments[indexPath.row];
+    
+    //创建弹出窗口
+    UIAlertView *alert=[[UIAlertView alloc]initWithTitle:@"System Info" message:[equipment getName] delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"OK", nil];
+    alert.alertViewStyle=UIAlertViewStylePlainTextInput; //设置窗口内容样式
+    UITextField *textField= [alert textFieldAtIndex:0]; //取得文本框
+    textField.text=equipment.data; //设置文本框内容
+    [alert show]; //显示窗口
+}
+
+#pragma mark 窗口的代理方法，用户保存数据
+-(void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex{
+    //当点击了第二个按钮（OK）
+    if (buttonIndex==1) {
+        UITextField *textField= [alertView textFieldAtIndex:0];
+        //修改模型数据
+        EquipmentGroup *group=_equipmentarrs[_selectedIndexPath.section];
+        Equipment *equipment=group.equipments[_selectedIndexPath.row];
+        equipment.data=textField.text;
+        //刷新表格
+        NSArray *indexPaths=@[_selectedIndexPath];//需要局部刷新的单元格的组、行
+        [_tableView reloadRowsAtIndexPaths:indexPaths withRowAnimation:UITableViewRowAnimationLeft];//后面的参数代表更新时的动画
+    }
+}
+*/
+#pragma mark 重写状态样式方法
+-(UIStatusBarStyle)preferredStatusBarStyle{
+    return UIStatusBarStyleLightContent;
+}
+
+#pragma mark 切换开关转化事件
+-(void)switchValueChange:(UISwitch *)sw{
+    NSLog(@"section:%i,switch:%i",sw.tag, sw.on);
+    int section = sw.tag/1000;
+    int row = sw.tag%1000;
+    EquipmentGroup *group=_equipmentarrs[section];
+    Equipment *equipment=group.equipments[row];
+    if(sw.on)
+    {
+        equipment.data = @"开";
+        //[sw setOn:YES animated:YES];
+    }
+    else
+    {
+        equipment.data = @"关";
+        //[sw setOn:NO animated:YES];
+    }
+    
+    NSIndexPath *indexpath = [NSIndexPath indexPathForRow:(sw.tag%1000) inSection:(sw.tag/1000)];
+    UITableViewCell *cell = [self tableView:_tableView cellForRowAtIndexPath:indexpath];
+    //cell.detailTextLabel.text = @"1";
+    
+    NSLog(@"%d, %d", (sw.tag%1000), (sw.tag/1000));
+    NSArray *index = @[indexpath];
+    
+    [_tableView reloadRowsAtIndexPaths:index withRowAnimation:UITableViewRowAnimationLeft];
+    sw.tag = (section*1000 + row);
+    NSLog(@"%@", equipment.data);
+    
+}
+
+- (void)didReceiveMemoryWarning {
+    [super didReceiveMemoryWarning];
+    // Dispose of any resources that can be recreated.
+}
+
+/*
+#pragma mark - Navigation
+
+// In a storyboard-based application, you will often want to do a little preparation before navigation
+- (void)prepareForSegue:(UIStoryboardSegue *)segue sender:(id)sender {
+    // Get the new view controller using [segue destinationViewController].
+    // Pass the selected object to the new view controller.
+}
+*/
+
+@end
