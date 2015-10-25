@@ -27,6 +27,7 @@
 @interface FirstViewController ()<UITableViewDataSource>{
     UITableView *_tableView;
     NSMutableArray *_equipmentarrs;//设备模型
+    NSMutableArray *_equipments;//设备模型
     NSIndexPath *_selectedIndexPath;//当前选中的组和行
 }
 @property (weak, nonatomic) IBOutlet UILabel *fire;
@@ -34,9 +35,11 @@
 @end
 
 int newsockfd;
-char *eName;
-char *eStatus;
-char *eData;
+NSString *eName;
+NSString *eStatus;
+NSString *eData;
+NSString *eGroupName;
+int i = 0;
 
 
 @implementation FirstViewController
@@ -55,6 +58,7 @@ char *eData;
         [self keep_alive];
     });
 
+    _equipments=[[NSMutableArray alloc]init];
     /*
     [self initData];
     
@@ -138,19 +142,47 @@ void split(char **arr, char *str, const char *del)
                     printf("[recvMsg]read message failed, %s\n", strerror(errno));
                     break;
                 }
-                /*
+                printf("[keep_alive]read message %s \n", recvBuff);
+                
                 char *arr[4];
                 char *del = ",";
                 split(arr, recvBuff, del);
                 if(strcmp(arr[0], "equipment") == 0)
                 {
-                    strcpy(eName, arr[1]);
-                    strcpy(eStatus, arr[2]);
-                    strcpy(eData, arr[3]);
+                    i++;
+                    eGroupName = @"智能装备";
+                    eName = [[NSString alloc] initWithCString:(const char*)arr[1] encoding:NSASCIIStringEncoding];
+                    if([eName isEqual: @"1"])
+                    {
+                        eName = [NSString stringWithFormat:@"温湿度检测%d",i];
+                    }
+                    if([eName isEqual: @"2"])
+                    {
+                        eName = [NSString stringWithFormat:@"烟雾报警器%d",i];
+                    }
+                    eStatus = [[NSString alloc] initWithCString:(const char*)arr[2] encoding:NSASCIIStringEncoding];
+                    eData = [[NSString alloc] initWithCString:(const char*)arr[3] encoding:NSASCIIStringEncoding];
+                    _equipmentarrs=[[NSMutableArray alloc]init];
+                    Equipment *i=[Equipment initWithName:eName andStatus:eStatus andData:eData];
+                    [_equipments addObject:i];
+                    
+                    dispatch_sync(main_queue, ^{
+                        
+                        [self initData];
+                        
+                        //创建一个分组样式的UITableView
+                        _tableView=[[UITableView alloc]initWithFrame:self.view.bounds style:UITableViewStyleGrouped];
+                        
+                        //设置数据源，注意必须实现对应的UITableViewDataSource协议
+                        _tableView.dataSource = self;
+                        
+                        //设置代理
+                        _tableView.delegate = self;
+                        
+                        [self.view addSubview:_tableView];
+                    });
                 }
                 
-                printf("%s, %s, %s, %s", arr[0], eName, eStatus, eData);
-                 */
                 if(strcmp(recvBuff, "9999") == 0)
                 {
                     dispatch_sync(main_queue, ^{
@@ -190,8 +222,10 @@ void split(char **arr, char *str, const char *del)
 
 #pragma mark 加载数据
 -(void)initData{
-    _equipmentarrs=[[NSMutableArray alloc]init];
-    
+    EquipmentGroup *group1=[EquipmentGroup initWithName:eGroupName andDetail:@"" andEquipments:_equipments];
+    [_equipmentarrs addObject:group1];
+
+    /*
     Equipment *equipment1=[Equipment initWithName:@"房间温湿度" andStatus:@"0" andData:@"温度20，湿度20"];
     Equipment *equipment2=[Equipment initWithName:@"客厅温湿度" andStatus:@"0" andData:@""];
     EquipmentGroup *group1=[EquipmentGroup initWithName:@"温湿度感应器" andDetail:@"" andEquipments:[NSMutableArray arrayWithObjects:equipment1,equipment2, nil]];
@@ -209,6 +243,7 @@ void split(char **arr, char *str, const char *del)
     Equipment *equipment8=[Equipment initWithName:@"厨房灯" andStatus:@"1" andData:@"开"];
     EquipmentGroup *group3=[EquipmentGroup initWithName:@"烟雾报警器" andDetail:@"" andEquipments:[NSMutableArray arrayWithObjects:equipment6,equipment7,equipment8, nil]];
     [_equipmentarrs addObject:group3];
+    */
 }
 
 
@@ -252,7 +287,7 @@ void split(char **arr, char *str, const char *del)
             cell=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:cellIdentifierForFirstRow];
             UISwitch *sw=[[UISwitch alloc]init];
             
-            if([equipment.data isEqual: @"开"]){
+            if([equipment.data isEqual: @"On"]){
                 [sw setOn:YES animated:YES];
             }
             else{
@@ -324,7 +359,6 @@ void split(char **arr, char *str, const char *del)
     return 0;
 }
 
-/*
 #pragma mark 点击行
 -(void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath{
     _selectedIndexPath=indexPath;
@@ -335,7 +369,7 @@ void split(char **arr, char *str, const char *del)
     UIAlertView *alert=[[UIAlertView alloc]initWithTitle:@"System Info" message:[equipment getName] delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"OK", nil];
     alert.alertViewStyle=UIAlertViewStylePlainTextInput; //设置窗口内容样式
     UITextField *textField= [alert textFieldAtIndex:0]; //取得文本框
-    textField.text=equipment.data; //设置文本框内容
+    textField.text=equipment.name; //设置文本框内容
     [alert show]; //显示窗口
 }
 
@@ -347,13 +381,13 @@ void split(char **arr, char *str, const char *del)
         //修改模型数据
         EquipmentGroup *group=_equipmentarrs[_selectedIndexPath.section];
         Equipment *equipment=group.equipments[_selectedIndexPath.row];
-        equipment.data=textField.text;
+        equipment.name=textField.text;
         //刷新表格
         NSArray *indexPaths=@[_selectedIndexPath];//需要局部刷新的单元格的组、行
         [_tableView reloadRowsAtIndexPaths:indexPaths withRowAnimation:UITableViewRowAnimationLeft];//后面的参数代表更新时的动画
     }
 }
-*/
+
 #pragma mark 重写状态样式方法
 -(UIStatusBarStyle)preferredStatusBarStyle{
     return UIStatusBarStyleLightContent;
@@ -368,12 +402,12 @@ void split(char **arr, char *str, const char *del)
     Equipment *equipment=group.equipments[row];
     if(sw.on)
     {
-        equipment.data = @"开";
+        equipment.data = @"On";
         //[sw setOn:YES animated:YES];
     }
     else
     {
-        equipment.data = @"关";
+        equipment.data = @"Off";
         //[sw setOn:NO animated:YES];
     }
     
