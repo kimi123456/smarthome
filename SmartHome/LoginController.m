@@ -218,12 +218,6 @@ void * msg = NULL;
     free(request);
     
     error = 0;
-<<<<<<< HEAD
-=======
-    //connectServer(duid, &sockfd, &flag, &error);
-    //NSLog(@"flag: %s", *flag);
-
->>>>>>> ae79e43653001f8ac6986a1165ed909548f3fd70
     int len;
     struct sockaddr_in address;
     long result;
@@ -236,11 +230,7 @@ void * msg = NULL;
     if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
         error = errno;
-<<<<<<< HEAD
         printf("[Login]socket failed, %s\n", strerror(errno));
-=======
-        printf("[connectServer]socket failed, %s\n", strerror(errno));
->>>>>>> ae79e43653001f8ac6986a1165ed909548f3fd70
         const char *emsg = strerror(error);
         _errorMsg.text = [[NSString alloc] initWithCString:(const char*)emsg encoding:NSASCIIStringEncoding];
         return;
@@ -257,33 +247,17 @@ void * msg = NULL;
     if((result = connect(sockfd, (struct sockaddr *)&address, len)) == -1)
     {
         error = errno;
-<<<<<<< HEAD
         printf("[Login]connect failed, %s\n", strerror(errno));
-=======
-        printf("[connectServer]connect failed, %s\n", strerror(errno));
->>>>>>> ae79e43653001f8ac6986a1165ed909548f3fd70
         emsg = strerror(error);
         _errorMsg.text = [[NSString alloc] initWithCString:(const char*)emsg encoding:NSASCIIStringEncoding];
         return;
     }
-<<<<<<< HEAD
 
     printf("[Login]send msg to server: %s\n", sendBuff);
     if((result = send(sockfd,sendBuff,255,0)) < 0)
     {
         error = errno;
         printf("[Login]send message failed, %s\n", strerror(errno));
-=======
-    
-    char sendBuff[256] = {0,};
-    strcat(sendBuff, duid);
-
-    printf("[sendMsg]send msg to server: %s\n", sendBuff);
-    if((result = send(sockfd,sendBuff,255,0)) < 0)
-    {
-        error = errno;
-        printf("[sendMsg]send message failed, %s\n", strerror(errno));
->>>>>>> ae79e43653001f8ac6986a1165ed909548f3fd70
         emsg = strerror(error);
         _errorMsg.text = [[NSString alloc] initWithCString:(const char*)emsg encoding:NSASCIIStringEncoding];
         return;
@@ -293,7 +267,6 @@ void * msg = NULL;
     if((result = read(sockfd, recvBuff, 256)) < 0)
     {
         error = errno;
-<<<<<<< HEAD
         printf("[Login]read message failed, %s \n", strerror(errno));
         emsg = strerror(error);
         _errorMsg.text = [[NSString alloc] initWithCString:(const char*)emsg encoding:NSASCIIStringEncoding];
@@ -318,45 +291,6 @@ void * msg = NULL;
         memmove(subData, tempData, 4);
         printf("[Login]result: %s \n", subData);
         if(strcmp(subData, "0x0") == 0)
-=======
-        printf("[recvMsg]read message failed, %s\n", strerror(errno));
-        emsg = strerror(error);
-        _errorMsg.text = [[NSString alloc] initWithCString:(const char*)emsg encoding:NSASCIIStringEncoding];
-        return;
-    }
-
-    if(error != 0)
-    {
-        emsg = strerror(error);
-        _errorMsg.text = [[NSString alloc] initWithCString:(const char*)emsg encoding:NSASCIIStringEncoding];
-    }
-    else if(strcmp(recvBuff, "ok") == 0)
-    {
-        AppDelegate *delegate=(AppDelegate*)[[UIApplication sharedApplication]delegate];
-        delegate.sockfd=sockfd;
-        NSLog(@"sockfd:%d", sockfd);
-        NSLog(@"d.sockfd:%d", delegate.sockfd);
-        
-        NSArray *paths =NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask, YES);
-        //获取完整路径
-        NSString *documentsDirectory = [paths objectAtIndex:0];
-        NSString *plistPath = [documentsDirectory stringByAppendingPathComponent:@"smarthome.plist"];
-        NSMutableDictionary *data = [[NSMutableDictionary alloc] initWithContentsOfFile:plistPath];
-        NSLog(@"%@", data);
-        
-        NSMutableDictionary *dictplist = [[NSMutableDictionary alloc] init];
-        //设置属性值
-        [dictplist setObject:_account.text forKey:@"name"];
-        [dictplist setObject:_password.text forKey:@"password"];
-        [dictplist setObject:@"0" forKey:@"isRememberPwd"];
-        //写入文件
-        [dictplist writeToFile:plistPath atomically:YES];
-        
-        NSString *path = [[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask, YES) objectAtIndex:0]stringByAppendingPathComponent:@"smarthome.plist"];
-        NSMutableDictionary *applist = [[[NSMutableDictionary alloc]initWithContentsOfFile:path]mutableCopy];
-        NSString *isRPwd = [applist objectForKey:@"isRememberPwd"];
-        if(isRememberPwd)
->>>>>>> ae79e43653001f8ac6986a1165ed909548f3fd70
         {
             printf("[Login]Login successfully!\n");
             free(subData);
