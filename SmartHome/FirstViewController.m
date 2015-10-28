@@ -159,6 +159,7 @@ void split(char **arr, char *str, const char *del)
                 }
                 printf("[keep_alive]read message %s \n", recvBuff);
                 
+                
                 unsigned int head = 0;
                 memmove(&head, recvBuff, 4);
                 unsigned int type = head >> 24;
@@ -280,25 +281,6 @@ void split(char **arr, char *str, const char *del)
                     Equipment *i=[Equipment initWithName:eName andStatus:eStatus andData:eData];
                     [_equipments addObject:i];
                     
-                    dispatch_sync(main_queue, ^{
-                        
-                        [self initData];
-                        
-                        //创建一个分组样式的UITableView
-                        _tableView=[[UITableView alloc]initWithFrame:self.view.bounds style:UITableViewStyleGrouped];
-                        
-                        //设置数据源，注意必须实现对应的UITableViewDataSource协议
-                        _tableView.dataSource = self;
-                        
-                        //设置代理
-                        _tableView.delegate = self;
-                        
-                        [self.view addSubview:_tableView];
-                    });
-                }
-                
-                if(strcmp(recvBuff, "9999") == 0)
-                {
                     dispatch_sync(main_queue, ^{
                         
                         [self initData];
