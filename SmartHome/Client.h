@@ -10,11 +10,15 @@
 #define Client_h
 
 void sendMsg(int *sockfd, int *error, char* sendMsgs);
-void recvMsg(int *sockfd, int *error, int *recvMsg);
+//void recvMsg(int *sockfd, int *error, int *recvMsg);
+
+void recvMsg(int *sockfd, int *error, char **recvMsg);
+
 
 void *recvMsg2(int *sockfd);
 int recvMsg3(int *sockfd);
-void connectServer(char* UUID, int *sockfd, int *flag, int *error);
+//void connectServer(char* UUID, int *sockfd, int *flag, int *error);
+void connectServer(char* UUID, int *sockfd, char **flag, int *error);
 
 void disConnect(int *sockfd);
 void keep_live(int *sockfd);

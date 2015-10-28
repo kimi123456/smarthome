@@ -27,6 +27,7 @@
 @interface FirstViewController ()<UITableViewDataSource>{
     UITableView *_tableView;
     NSMutableArray *_equipmentarrs;//设备模型
+    NSMutableArray *_equipments;//设备模型
     NSIndexPath *_selectedIndexPath;//当前选中的组和行
 }
 @property (weak, nonatomic) IBOutlet UILabel *fire;
@@ -34,9 +35,12 @@
 @end
 
 int newsockfd;
-char *eName;
-char *eStatus;
-char *eData;
+NSString *eName;
+NSString *eStatus;
+NSString *eData;
+NSString *eNum;
+NSString *eGroupName;
+int i = 0;
 
 
 @implementation FirstViewController
@@ -55,6 +59,7 @@ char *eData;
         [self keep_alive];
     });
 
+    _equipments=[[NSMutableArray alloc]init];
     /*
     [self initData];
     
@@ -92,7 +97,8 @@ void split(char **arr, char *str, const char *del)
     fd_set rfds;
     struct timeval tv;
     int retval, maxfd = -1;
-    int len;
+    long result;
+        
     while(1)
     {
         FD_ZERO(&rfds);
@@ -114,6 +120,20 @@ void split(char **arr, char *str, const char *del)
         }
         else if(retval == 0)
         {
+            //心跳协议发送
+            char* request = (char*)malloc(4);
+            unsigned int data[1];
+            data[0] = (0x1 << 30) | (0x1 << 24);
+            memmove(request, data, 4);
+            
+            printf("[sendMsg]send msg to server: %s\n", request);
+            if((result = send(newsockfd,request,4,0)) < 0)
+            {
+                printf("[sendMsg]send message failed, %s\n", strerror(errno));
+                break;
+            }
+            free(request);
+            /*
             char sendBuff[256] = {0,};
             sprintf(sendBuff, "%d", 1);
             int result;
@@ -124,6 +144,7 @@ void split(char **arr, char *str, const char *del)
                 printf("[sendMsg]send message failed, %s\n", strerror(errno));
                 break;
             }
+             */
             continue;
         }
         else
@@ -131,54 +152,151 @@ void split(char **arr, char *str, const char *del)
             if(FD_ISSET(newsockfd, &rfds))
             {
                 char recvBuff[256] = {0,};
-                int result;
-                
                 if((result = read(newsockfd, recvBuff, 256)) <= 0)
                 {
-                    printf("[recvMsg]read message failed, %s\n", strerror(errno));
+                    printf("[keep_alive]read message failed, %s\n", strerror(errno));
                     break;
                 }
+                printf("[keep_alive]read message %s \n", recvBuff);
+                
+                
+                unsigned int head = 0;
+                memmove(&head, recvBuff, 4);
+                unsigned int type = head >> 24;
+                printf("[keep_live] %d \n", type);
+
+                //心跳响应
+                if(type == 0x1)
+                {
+                    char *data = recvBuff + 4;
+                    char* subData = (char*)malloc(4);
+                    memmove(subData, data, 4);
+                    if(strcmp(subData, "0x0") == 0)
+                    {
+                        printf("[keep_alive]recv server msg! \n");
+                        free(subData);
+                        continue;
+                    }
+                    else
+                    {
+                        printf("[keep_alive]please check the network!");
+                    }
+                }
+                
+                //设备列表
+                if(type == 0x3)
+                {
+                    char *data = recvBuff + 4;
+                    char* subData = (char*)malloc(4);
+                    memmove(subData, data, 4);
+                    printf("[keep_live]0x3 --> isFailed: %s \n", subData);
+                    if(strcmp(subData, "0x0") == 0)
+                    {
+                        printf("[keep_live]Get equipment successfully! \n");
+                        eGroupName = @"智能设备";
+                        data += 4;
+                        memmove(subData, data, 4);
+                        printf("[keep_live]0x3-->name: %s \n", subData);
+                        eName = [[NSString alloc] initWithCString:(const char*)subData encoding:NSASCIIStringEncoding];
+                        data += 4;
+                        memmove(subData, data, 4);
+                        printf("[keep_live]0x3-->num: %s \n", subData);
+                        eNum = [[NSString alloc] initWithCString:(const char*)subData encoding:NSASCIIStringEncoding];
+                        
+                        if([eName isEqual: @"0x1"])
+                        {
+                            eName = [NSString stringWithFormat:@"开关%@",eNum];
+                            eStatus = @"1";
+                        }
+                        if([eName isEqual: @"0x2"])
+                        {
+                            eName = [NSString stringWithFormat:@"温湿度计%@",eNum];
+                            eStatus = @"0";
+                        }
+                        if([eName isEqual: @"0x3"])
+                        {
+                            eName = [NSString stringWithFormat:@"可燃气体报警器%@",eNum];
+                            eStatus = @"0";
+                        }
+                        if([eName isEqual: @"0x4"])
+                        {
+                            eName = [NSString stringWithFormat:@"人体感应器%@",eNum];
+                            eStatus = @"0";
+                        }
+
+                        data += 4;
+                        memmove(subData, data, 4);
+                        printf("[keep_live]0x3-->data: %s \n", subData);
+                        eData = [[NSString alloc] initWithCString:(const char*)subData encoding:NSASCIIStringEncoding];
+                        
+                        i++;
+                        _equipmentarrs=[[NSMutableArray alloc]init];
+                        Equipment *i=[Equipment initWithName:eName andStatus:eStatus andData:eData];
+                        [_equipments addObject:i];
+                        
+                        dispatch_sync(main_queue, ^{
+                            
+                            [self initData];
+                            
+                            //创建一个分组样式的UITableView
+                            _tableView=[[UITableView alloc]initWithFrame:self.view.bounds style:UITableViewStyleGrouped];
+                            
+                            //设置数据源，注意必须实现对应的UITableViewDataSource协议
+                            _tableView.dataSource = self;
+                            
+                            //设置代理
+                            _tableView.delegate = self;
+                            
+                            [self.view addSubview:_tableView];
+                        });
+                        
+                        free(subData);
+                    }
+                    else
+                    {
+                        printf("[keep_live]Get equipment failed: %s \n",recvBuff);
+                    }
+                }
+                
                 /*
                 char *arr[4];
                 char *del = ",";
                 split(arr, recvBuff, del);
                 if(strcmp(arr[0], "equipment") == 0)
                 {
-                    strcpy(eName, arr[1]);
-                    strcpy(eStatus, arr[2]);
-                    strcpy(eData, arr[3]);
-                }
-                
-                printf("%s, %s, %s, %s", arr[0], eName, eStatus, eData);
-                 */
-                if(strcmp(recvBuff, "9999") == 0)
-                {
+                    i++;
+                    eGroupName = @"智能装备";
+                    eName = [[NSString alloc] initWithCString:(const char*)arr[1] encoding:NSASCIIStringEncoding];
+                    if([eName isEqual: @"1"])
+                    {
+                        eName = [NSString stringWithFormat:@"温湿度检测%d",i];
+                    }
+                    if([eName isEqual: @"2"])
+                    {
+                        eName = [NSString stringWithFormat:@"烟雾报警器%d",i];
+                    }
+                    eStatus = [[NSString alloc] initWithCString:(const char*)arr[2] encoding:NSASCIIStringEncoding];
+                    eData = [[NSString alloc] initWithCString:(const char*)arr[3] encoding:NSASCIIStringEncoding];
+                    _equipmentarrs=[[NSMutableArray alloc]init];
+                    Equipment *i=[Equipment initWithName:eName andStatus:eStatus andData:eData];
+                    [_equipments addObject:i];
+                    
                     dispatch_sync(main_queue, ^{
-  
+                        
                         [self initData];
                         
                         //创建一个分组样式的UITableView
                         _tableView=[[UITableView alloc]initWithFrame:self.view.bounds style:UITableViewStyleGrouped];
                         
                         //设置数据源，注意必须实现对应的UITableViewDataSource协议
-                        _tableView.dataSource=self;
+                        _tableView.dataSource = self;
                         
                         //设置代理
-                        _tableView.delegate= self;
+                        _tableView.delegate = self;
                         
                         [self.view addSubview:_tableView];
                     });
-                    
-                }
-                /*
-                else
-                {
-                    dispatch_sync(main_queue, ^{
-                        NSLog(@"No Fire!");
-                        self.fire.text = @ "No Fire!";
-                    });
-                }
-                 */
+                }*/
             }
             continue;
         }
@@ -190,8 +308,10 @@ void split(char **arr, char *str, const char *del)
 
 #pragma mark 加载数据
 -(void)initData{
-    _equipmentarrs=[[NSMutableArray alloc]init];
-    
+    EquipmentGroup *group1=[EquipmentGroup initWithName:eGroupName andDetail:@"" andEquipments:_equipments];
+    [_equipmentarrs addObject:group1];
+
+    /*
     Equipment *equipment1=[Equipment initWithName:@"房间温湿度" andStatus:@"0" andData:@"温度20，湿度20"];
     Equipment *equipment2=[Equipment initWithName:@"客厅温湿度" andStatus:@"0" andData:@""];
     EquipmentGroup *group1=[EquipmentGroup initWithName:@"温湿度感应器" andDetail:@"" andEquipments:[NSMutableArray arrayWithObjects:equipment1,equipment2, nil]];
@@ -209,6 +329,7 @@ void split(char **arr, char *str, const char *del)
     Equipment *equipment8=[Equipment initWithName:@"厨房灯" andStatus:@"1" andData:@"开"];
     EquipmentGroup *group3=[EquipmentGroup initWithName:@"烟雾报警器" andDetail:@"" andEquipments:[NSMutableArray arrayWithObjects:equipment6,equipment7,equipment8, nil]];
     [_equipmentarrs addObject:group3];
+    */
 }
 
 
@@ -252,7 +373,7 @@ void split(char **arr, char *str, const char *del)
             cell=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:cellIdentifierForFirstRow];
             UISwitch *sw=[[UISwitch alloc]init];
             
-            if([equipment.data isEqual: @"开"]){
+            if([equipment.data isEqual: @"On"]){
                 [sw setOn:YES animated:YES];
             }
             else{
@@ -324,7 +445,6 @@ void split(char **arr, char *str, const char *del)
     return 0;
 }
 
-/*
 #pragma mark 点击行
 -(void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath{
     _selectedIndexPath=indexPath;
@@ -335,7 +455,7 @@ void split(char **arr, char *str, const char *del)
     UIAlertView *alert=[[UIAlertView alloc]initWithTitle:@"System Info" message:[equipment getName] delegate:self cancelButtonTitle:@"Cancel" otherButtonTitles:@"OK", nil];
     alert.alertViewStyle=UIAlertViewStylePlainTextInput; //设置窗口内容样式
     UITextField *textField= [alert textFieldAtIndex:0]; //取得文本框
-    textField.text=equipment.data; //设置文本框内容
+    textField.text=equipment.name; //设置文本框内容
     [alert show]; //显示窗口
 }
 
@@ -347,13 +467,13 @@ void split(char **arr, char *str, const char *del)
         //修改模型数据
         EquipmentGroup *group=_equipmentarrs[_selectedIndexPath.section];
         Equipment *equipment=group.equipments[_selectedIndexPath.row];
-        equipment.data=textField.text;
+        equipment.name=textField.text;
         //刷新表格
         NSArray *indexPaths=@[_selectedIndexPath];//需要局部刷新的单元格的组、行
         [_tableView reloadRowsAtIndexPaths:indexPaths withRowAnimation:UITableViewRowAnimationLeft];//后面的参数代表更新时的动画
     }
 }
-*/
+
 #pragma mark 重写状态样式方法
 -(UIStatusBarStyle)preferredStatusBarStyle{
     return UIStatusBarStyleLightContent;
@@ -368,12 +488,12 @@ void split(char **arr, char *str, const char *del)
     Equipment *equipment=group.equipments[row];
     if(sw.on)
     {
-        equipment.data = @"开";
+        equipment.data = @"On";
         //[sw setOn:YES animated:YES];
     }
     else
     {
-        equipment.data = @"关";
+        equipment.data = @"Off";
         //[sw setOn:NO animated:YES];
     }
     

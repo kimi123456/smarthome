@@ -38,7 +38,8 @@ void sendMsg(int *sockfd, int *error, char* sendMsgs)
     }
 }
 
-void recvMsg(int *sockfd, int *error, int *recvMsg)
+//void recvMsg(int *sockfd, int *error, int *recvMsg)
+void recvMsg(int *sockfd, int *error, char **recvMsg)
 {
     char recvBuff[256] = {0,};
     long result;
@@ -52,8 +53,10 @@ void recvMsg(int *sockfd, int *error, int *recvMsg)
     
     if(strlen(recvBuff) > 0)
     {
-        *recvMsg = atoi(recvBuff);
-        printf("[recvMsg]get msg from server: %d\n", *recvMsg);
+        //*recvMsg = atoi(recvBuff);
+        *recvMsg = recvBuff;
+        //strcpy(recvMsg, recvBuff);
+        printf("[recvMsg]get msg from server: %s\n", *recvMsg);
     }
 }
 
@@ -151,7 +154,8 @@ void keep_live(int *sockfd)
 }
 
 
-void connectServer(char* UUID, int *sockfd, int *flag, int *error)
+//void connectServer(char* UUID, int *sockfd, int *flag, int *error)
+void connectServer(char* UUID, int *sockfd, char **flag, int *error)
 {
     int len;
     struct sockaddr_in address;
@@ -185,10 +189,11 @@ void connectServer(char* UUID, int *sockfd, int *flag, int *error)
         //exit(EXIT_FAILURE);
     }
     
-    if(*flag == 0)
+    if(flag == NULL)
     {
         sendMsg(sockfd, error, UUID);
         recvMsg(sockfd, error, flag);
+        printf("connectServer: %s \n", *flag);
     }
 }
 

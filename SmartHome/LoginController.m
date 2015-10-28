@@ -15,6 +15,19 @@
 #import "CheckBox.h"
 #import "AppDelegate.h"
 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <stdio.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <netdb.h>
+#include <sys/time.h>
+#include <sys/select.h>
+#include <errno.h>
+#include <string.h>
+
 @interface LoginController ()
 <CheckBoxDelegate>
 
@@ -34,7 +47,8 @@ bool isRememberPwd = false;
 bool isAutoLogin = false;
 int sockfd = -1;
 int error = 0;
-int flag;
+//int flag;
+//char *flag = NULL;
 char *duid;
 int res = 0;
 void * msg = NULL;
@@ -146,7 +160,7 @@ void * msg = NULL;
 
 -(void)onChangeDelegate:(CheckBox *)checkbox isCheck:(BOOL)isCheck{
     
-    if(checkbox.text == @"记住密码")
+    if([checkbox.text  isEqual: @"记住密码"])
     {
         if(isCheck)
         {
@@ -172,69 +186,164 @@ void * msg = NULL;
     //NSLog(@"pwd--text:%@,State:%@",checkbox.text,isCheck?@"YES":@"NO");
 }
 
-
 -(void)login:(UIButton *)btn{
     
-    NSString *name = _account.text;
-    NSString *pwd = _password.text;
-    NSString *newString = [NSString stringWithFormat:@"%@%@",name,pwd];
-    duid = [newString UTF8String];
-    NSLog(@"duid: %s", duid);
+    //NSString *name = _account.text;
+    //NSString *pwd = _password.text;
+    char sendBuff[256] = {0,};
+    char tempBuff[256] = {0,};
+
+    const char *name =[_account.text UTF8String];
+    const char *pwd = [_password.text UTF8String];
+    
+    strcat(tempBuff, name);
+    strcat(tempBuff, pwd);
+    
+    int length = strlen(tempBuff);
+    
+    //NSString *newString = [NSString stringWithFormat:@"%d%s",length,tempBuff];
+    //NSInteger strLen = newString.length;
+    //newString = [NSString stringWithFormat:@"%ld%@",(long)strLen,newString];
+    
+    //duid = [newString UTF8String];
+    //NSLog(@"duid: %s", duid);
+    
+    char* request = (char*)malloc(4);
+    unsigned int data[1];
+    data[0] = (0x1 << 30) | (0x2 << 24) | length;
+    memmove(request, data, 4);
+    strcat(sendBuff, request);
+    strcat(sendBuff, name);
+    strcat(sendBuff, pwd);
+    free(request);
+    
     error = 0;
-    connectServer(duid, &sockfd, &flag, &error);
-    //flag = 123;
-    if(error != 0)
+    int len;
+    struct sockaddr_in address;
+    long result;
+    const char *emsg = NULL;
+    
+    char server_hostname[] = "tonyvanhawk.xicp.net";
+    struct hostent* server_hostent;
+    server_hostent = gethostbyname( server_hostname );
+    
+    if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
+        error = errno;
+        printf("[Login]socket failed, %s\n", strerror(errno));
         const char *emsg = strerror(error);
         _errorMsg.text = [[NSString alloc] initWithCString:(const char*)emsg encoding:NSASCIIStringEncoding];
+        return;
     }
-    else if(flag == 123)
+    
+    memset(&address, 0, sizeof(address));
+    
+    address.sin_family = AF_INET;
+    address.sin_port = htons(1080);
+    address.sin_addr = *((struct in_addr *)server_hostent->h_addr);
+    
+    len = sizeof(address);
+    
+    if((result = connect(sockfd, (struct sockaddr *)&address, len)) == -1)
     {
-        AppDelegate *delegate=(AppDelegate*)[[UIApplication sharedApplication]delegate];
-        delegate.sockfd=sockfd;
-        NSLog(@"sockfd:%d", sockfd);
-        NSLog(@"d.sockfd:%d", delegate.sockfd);
-    //if ([_account.text isEqualToString:@"huochangjun"] && [_password.text isEqualToString:@"123"] ) {
-        
-        
-        NSArray *paths =NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask, YES);
-        //获取完整路径
-        NSString *documentsDirectory = [paths objectAtIndex:0];
-        NSString *plistPath = [documentsDirectory stringByAppendingPathComponent:@"smarthome.plist"];
-        NSMutableDictionary *data = [[NSMutableDictionary alloc] initWithContentsOfFile:plistPath];
-        NSLog(@"%@", data);
-        
-        NSMutableDictionary *dictplist = [[NSMutableDictionary alloc] init];
-        //设置属性值
-        [dictplist setObject:_account.text forKey:@"name"];
-        [dictplist setObject:_password.text forKey:@"password"];
-        [dictplist setObject:@"0" forKey:@"isRememberPwd"];
-        //写入文件
-        [dictplist writeToFile:plistPath atomically:YES];
-        
-        NSString *path = [[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask, YES) objectAtIndex:0]stringByAppendingPathComponent:@"smarthome.plist"];
-        NSMutableDictionary *applist = [[[NSMutableDictionary alloc]initWithContentsOfFile:path]mutableCopy];
-        NSString *isRPwd = [applist objectForKey:@"isRememberPwd"];
-        if(isRememberPwd)
+        error = errno;
+        printf("[Login]connect failed, %s\n", strerror(errno));
+        emsg = strerror(error);
+        _errorMsg.text = [[NSString alloc] initWithCString:(const char*)emsg encoding:NSASCIIStringEncoding];
+        return;
+    }
+
+    printf("[Login]send msg to server: %s\n", sendBuff);
+    if((result = send(sockfd,sendBuff,255,0)) < 0)
+    {
+        error = errno;
+        printf("[Login]send message failed, %s\n", strerror(errno));
+        emsg = strerror(error);
+        _errorMsg.text = [[NSString alloc] initWithCString:(const char*)emsg encoding:NSASCIIStringEncoding];
+        return;
+    }
+    
+    char recvBuff[256] = {0,};
+    if((result = read(sockfd, recvBuff, 256)) < 0)
+    {
+        error = errno;
+        printf("[Login]read message failed, %s \n", strerror(errno));
+        emsg = strerror(error);
+        _errorMsg.text = [[NSString alloc] initWithCString:(const char*)emsg encoding:NSASCIIStringEncoding];
+        return;
+    }
+
+    //app 认证响应
+    unsigned int head = 0;
+    memmove(&head, recvBuff, 4);
+    unsigned int type = head >> 24;
+    printf("[Login]type: %d \n", type);
+    if(error != 0)
+    {
+        emsg = strerror(error);
+        _errorMsg.text = [[NSString alloc] initWithCString:(const char*)emsg encoding:NSASCIIStringEncoding];
+    }
+    else if(type == 0x2)
+    //else if(strcmp(recvBuff, "ok") == 0)
+    {
+        char *tempData = recvBuff + 4;
+        char* subData = (char*)malloc(4);
+        memmove(subData, tempData, 4);
+        printf("[Login]result: %s \n", subData);
+        if(strcmp(subData, "0x0") == 0)
         {
-            isRPwd = @"1";
+            printf("[Login]Login successfully!\n");
+            free(subData);
+            AppDelegate *delegate=(AppDelegate*)[[UIApplication sharedApplication]delegate];
+            delegate.sockfd=sockfd;
+            NSLog(@"sockfd:%d", sockfd);
+            NSLog(@"d.sockfd:%d", delegate.sockfd);
+            
+            NSArray *paths =NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask, YES);
+            //获取完整路径
+            NSString *documentsDirectory = [paths objectAtIndex:0];
+            NSString *plistPath = [documentsDirectory stringByAppendingPathComponent:@"smarthome.plist"];
+            NSMutableDictionary *data = [[NSMutableDictionary alloc] initWithContentsOfFile:plistPath];
+            NSLog(@"%@", data);
+            
+            NSMutableDictionary *dictplist = [[NSMutableDictionary alloc] init];
+            //设置属性值
+            [dictplist setObject:_account.text forKey:@"name"];
+            [dictplist setObject:_password.text forKey:@"password"];
+            [dictplist setObject:@"0" forKey:@"isRememberPwd"];
+            //写入文件
+            [dictplist writeToFile:plistPath atomically:YES];
+            
+            NSString *path = [[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask, YES) objectAtIndex:0]stringByAppendingPathComponent:@"smarthome.plist"];
+            NSMutableDictionary *applist = [[[NSMutableDictionary alloc]initWithContentsOfFile:path]mutableCopy];
+            NSString *isRPwd = [applist objectForKey:@"isRememberPwd"];
+            if(isRememberPwd)
+            {
+                isRPwd = @"1";
+            }
+            else
+            {
+                isRPwd = @ "0";
+            }
+            [applist setObject:isRPwd forKey:@"isRememberPwd"];
+            [applist writeToFile:path atomically:YES];
+            
+            NSLog(@"%@", applist);
+            
+            //调用代理方法传参
+            UITabBarController *viewValue=[[UITabBarController alloc]init];
+            [viewValue setModalTransitionStyle:UIModalTransitionStyleFlipHorizontal];
+            [viewValue setModalPresentationStyle:UIModalPresentationFullScreen];
+            [self presentModalViewController:[self.storyboard instantiateViewControllerWithIdentifier:@"tabbar"] animated:YES];
+            //[self presentViewController:viewValue animated:YES completion:nil];
+            //[self dismissViewControllerAnimated:YES completion:nil];
         }
         else
         {
-            isRPwd = @ "0";
+            printf("[Login]Login failed!\n");
+            UIAlertView *alertView=[[UIAlertView alloc]initWithTitle:@"系统信息" message:@"用户名或密码错误，请重新输入！" delegate:nil cancelButtonTitle:@"取消" otherButtonTitles:nil];
+            [alertView show];
         }
-        [applist setObject:isRPwd forKey:@"isRememberPwd"];
-        [applist writeToFile:path atomically:YES];
-        
-        NSLog(@"%@", applist);
-        
-        //调用代理方法传参
-        UITabBarController *viewValue=[[UITabBarController alloc]init];
-        [viewValue setModalTransitionStyle:UIModalTransitionStyleFlipHorizontal];
-        [viewValue setModalPresentationStyle:UIModalPresentationFullScreen];
-        [self presentModalViewController:[self.storyboard instantiateViewControllerWithIdentifier:@"tabbar"] animated:YES];
-        //[self presentViewController:viewValue animated:YES completion:nil];
-        //[self dismissViewControllerAnimated:YES completion:nil];
     }
     else{
         //登录失败弹出提示信息
